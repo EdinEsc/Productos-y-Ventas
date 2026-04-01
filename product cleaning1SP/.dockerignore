@@ -1,0 +1,10 @@
+node_modules
+npm-debug.log*
+.git
+.gitignore
+.env
+.env.*
+*.md
+.nodemonignore
+cleanup-state*.json
+src/cleanup-state*.json

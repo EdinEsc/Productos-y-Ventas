@@ -1,0 +1,32 @@
+version: "3.8"
+
+services:
+  limpieza-ventas:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: servicio-limpieza-ventas
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    env_file:
+      - .env
+    environment:
+      # Sobreescribir la ruta de la llave SSH para que apunte
+      # a la ubicación montada dentro del contenedor
+      - SSH_KEY_PATH=/app/ssh/bastion.pem
+    volumes:
+      # Montar la llave SSH privada (solo lectura)
+      # Cambia la ruta local si tu llave está en otro lugar
+      - ${SSH_KEY_LOCAL_PATH:-C:/Users/HOME/Downloads/bastion.pem}:/app/ssh/bastion.pem:ro
+    networks:
+      - app-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  app-network:
+    driver: bridge

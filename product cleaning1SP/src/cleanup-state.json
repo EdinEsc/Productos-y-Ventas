@@ -1,0 +1,14 @@
+{
+  "company_id": 1359,
+  "estado": "ejecutando",
+  "tabla_actual": "com_transaction_bank",
+  "tablas_completadas": [
+    "com_cash",
+    "sal_series",
+    "ca_documents",
+    "ca_documents_details",
+    "pur_documents"
+  ],
+  "fecha_inicio": "2026-04-01T16:21:13.270Z",
+  "error": null
+}

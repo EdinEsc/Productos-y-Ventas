@@ -1,0 +1,19 @@
+{
+  "name": "servicio-limpieza-ventas",
+  "version": "1.0.0",
+  "description": "Servicio para limpiar datos de ventas por empresa y nodo",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+   "dev": "nodemon --ignore \"cleanup-state*.json\" src/index.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.6.1",
+    "express": "^4.22.1",
+    "mysql2": "^3.20.0",
+    "ssh2": "^1.17.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}
