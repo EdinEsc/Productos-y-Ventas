@@ -26,7 +26,9 @@ function getAvailableKeys() {
   return ['db1', 'db2', 'db3', 'db4', 'db5'];
 }
 
-async function connectDatabase(dbKey) {
+async function connectDatabase(dbKey, options = { batch: false }) {
+  const isBatch = options.batch;
+
   if (activeConnections[dbKey]) {
     return activeConnections[dbKey].connection;
   }
@@ -37,7 +39,7 @@ async function connectDatabase(dbKey) {
 
   const cfg = getDbConfig(dbKey);
 
-  pendingConnections[dbKey] = _createConnection(dbKey, cfg)
+  pendingConnections[dbKey] = _createConnection(dbKey, cfg, isBatch)
     .then((result) => {
       activeConnections[dbKey] = result;
       delete pendingConnections[dbKey];
@@ -51,7 +53,7 @@ async function connectDatabase(dbKey) {
   return pendingConnections[dbKey];
 }
 
-async function _createConnection(dbKey, cfg) {
+async function _createConnection(dbKey, cfg, isBatch) {
   const privateKey = fs.readFileSync(process.env.SSH_KEY_PATH);
 
   return new Promise((resolve, reject) => {
@@ -76,7 +78,12 @@ async function _createConnection(dbKey, cfg) {
                 password: process.env.DB_PASSWORD,
                 database: cfg.name,
                 stream,
-                connectTimeout: 60000,
+                connectTimeout: isBatch ? 300000 : 60000,
+              });
+
+              connection.on('error', (err) => {
+                console.log(`[DB] Error en conexión ${dbKey}:`, err.message);
+                delete activeConnections[dbKey];
               });
 
               resolve({ ssh, connection });
@@ -87,7 +94,10 @@ async function _createConnection(dbKey, cfg) {
           }
         );
       })
-      .on('error', reject)
+      .on('error', (err) => {
+        console.log(`[SSH] Error en ${dbKey}:`, err.message);
+        reject(err);
+      })
       .on('close', () => {
         delete activeConnections[dbKey];
         console.log(`[DB] Conexión cerrada: ${dbKey}`);
@@ -97,19 +107,21 @@ async function _createConnection(dbKey, cfg) {
         port: Number(process.env.SSH_PORT || 22),
         username: process.env.SSH_USER,
         privateKey,
-        readyTimeout: 60000,
+        readyTimeout: isBatch ? 300000 : 60000,
+        keepaliveInterval: isBatch ? 10000 : 0,
+        keepaliveCountMax: isBatch ? 5 : 0,
       });
   });
 }
 
-async function query(dbKey, sql, params = []) {
-  const conn = await connectDatabase(dbKey);
+async function query(dbKey, sql, params = [], options = { batch: false }) {
+  const conn = await connectDatabase(dbKey, options);
   const [rows] = await conn.execute(sql, params);
   return rows;
 }
 
-async function execute(dbKey, sql, params = []) {
-  const conn = await connectDatabase(dbKey);
+async function execute(dbKey, sql, params = [], options = { batch: false }) {
+  const conn = await connectDatabase(dbKey, options);
   const [result] = await conn.execute(sql, params);
   return result;
 }

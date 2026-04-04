@@ -1,12 +1,15 @@
 require('dotenv').config();
 const express = require('express');
+const cors = require('cors');
 const { query, closeAllDatabases, getAvailableKeys } = require('./config/db');
 const cleanupRoutes = require('./routes/cleanupRoutes');
 
 const app = express();
+
+app.use(cors());
 app.use(express.json());
 
-app.get('/test-db/:dbKey', async (req, res) => {
+app.get('/api/test-db/:dbKey', async (req, res) => {
   const { dbKey } = req.params;
 
   if (!getAvailableKeys().includes(dbKey)) {
@@ -17,68 +20,45 @@ app.get('/test-db/:dbKey', async (req, res) => {
   }
 
   try {
-    const rows = await query(dbKey, 'SELECT NOW() AS now_time, DATABASE() AS db_name');
-    res.json({ ok: true, dbKey, data: rows });
-  } catch (error) {
-    console.error(`Error en /test-db/${dbKey}:`, error);
-    res.status(500).json({ ok: false, message: error.message });
-  }
-});
-
-app.get('/:dbKey/empresa/:id/documentos', async (req, res) => {
-  const { dbKey, id } = req.params;
-  const companyId = Number(id);
-
-  if (!getAvailableKeys().includes(dbKey)) {
-    return res.status(400).json({
-      ok: false,
-      message: `dbKey inválido. Opciones: ${getAvailableKeys().join(', ')}`,
-    });
-  }
-
-  if (!companyId || isNaN(companyId)) {
-    return res.status(400).json({ ok: false, message: 'ID de empresa inválido' });
-  }
-
-  try {
     const rows = await query(
       dbKey,
-      `SELECT COUNT(*) AS total
-       FROM sal_documents
-       WHERE com_company_id = ?
-         AND deleted_at IS NULL`,
-      [companyId]
+      'SELECT NOW() AS now_time, DATABASE() AS db_name'
     );
-    res.json({ ok: true, dbKey, companyId, data: rows[0] });
+
+    res.json({ ok: true, dbKey, data: rows });
   } catch (error) {
-    console.error(`Error en /${dbKey}/empresa/${companyId}/documentos:`, error);
+    console.error(`[ERROR][test-db][${dbKey}]`, error.message);
     res.status(500).json({ ok: false, message: error.message });
   }
 });
 
-// Rutas de limpieza
-app.use(cleanupRoutes);
+app.use('/api', cleanupRoutes);
+
+app.use((err, req, res, next) => {
+  console.error('[GLOBAL ERROR]', err);
+  res.status(500).json({
+    ok: false,
+    message: 'Error interno del servidor',
+  });
+});
 
 const port = Number(process.env.PORT || 3000);
 
 async function startServer() {
   app.listen(port, () => {
-    console.log(`Servidor corriendo en puerto ${port}`);
-    console.log(`BDs disponibles: ${getAvailableKeys().join(', ')}`);
-    console.log('Las conexiones SSH+MySQL se abren bajo demanda por cada BD');
+    console.log(`[SERVER] Corriendo en puerto ${port}`);
+    console.log(`[SERVER] BDs disponibles: ${getAvailableKeys().join(', ')}`);
+    console.log('[SERVER] Conexiones SSH+MySQL bajo demanda');
   });
 }
 
-process.on('SIGINT', async () => {
+async function shutdown() {
   console.log('\n[SERVER] Cerrando conexiones...');
   await closeAllDatabases();
   process.exit(0);
-});
+}
 
-process.on('SIGTERM', async () => {
-  console.log('\n[SERVER] Cerrando conexiones...');
-  await closeAllDatabases();
-  process.exit(0);
-});
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
 
 startServer();

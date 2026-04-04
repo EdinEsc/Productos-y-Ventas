@@ -76,11 +76,9 @@ async function _createConnection(dbKey, cfg) {
                 password: process.env.DB_PASSWORD,
                 database: cfg.name,
                 stream,
-                connectTimeout: 300000,     // 5 minutos
-                // timeout NO es válido en mysql2, lo quitamos
+                connectTimeout: 300000,
               });
 
-              // Manejar errores de conexión
               connection.on('error', (err) => {
                 console.log(`[DB] Error en conexión ${dbKey}:`, err.message);
                 delete activeConnections[dbKey];
@@ -107,9 +105,9 @@ async function _createConnection(dbKey, cfg) {
         port: Number(process.env.SSH_PORT || 22),
         username: process.env.SSH_USER,
         privateKey,
-        readyTimeout: 300000,           // 5 minutos
-        keepaliveInterval: 10000,       // Ping cada 10 segundos
-        keepaliveCountMax: 5,           // 5 intentos de ping antes de cerrar
+        readyTimeout: 300000,
+        keepaliveInterval: 10000,
+        keepaliveCountMax: 5,
       });
   });
 }

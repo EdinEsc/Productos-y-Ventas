@@ -4,9 +4,11 @@ const { leerEstado, guardarEstado, borrarEstado } = require('../utils/cleanupSta
 const BATCH_SMALL = 5000;
 const BATCH_BIG = 10000;
 
+const MAX_RETRIES = 3;
+
 const TODAS_LAS_TABLAS = [
-  { tabla: 'com_cash',                     tipo: 'simple', campo_empresa: 'company_id'      },
-  { tabla: 'sal_series',                   tipo: 'simple', campo_empresa: 'company_id'      },
+  { tabla: 'com_cash',                     tipo: 'simple', campo_empresa: 'company_id' },
+  { tabla: 'sal_series',                   tipo: 'simple', campo_empresa: 'company_id' },
   { tabla: 'ca_documents',                tipo: 'lote',   campo_empresa: 'company_id',     lote: BATCH_SMALL },
   { tabla: 'ca_documents_details',        tipo: 'lote',   campo_empresa: 'company_id',     lote: BATCH_SMALL },
   { tabla: 'pur_documents',               tipo: 'lote',   campo_empresa: 'company_id',     lote: BATCH_SMALL },
@@ -19,7 +21,7 @@ const TODAS_LAS_TABLAS = [
   { tabla: 'ca_amortizations',            tipo: 'lote',   campo_empresa: 'company_id',     lote: BATCH_BIG   },
   { tabla: 'ca_amortizations_details',    tipo: 'lote',   campo_empresa: 'company_id',     lote: BATCH_BIG   },
   { tabla: 'com_cash_movement',           tipo: 'lote',   campo_empresa: 'company_id',     lote: BATCH_BIG   },
-  { tabla: 'sal_documents',              tipo: 'lote',   campo_empresa: 'com_company_id', lote: BATCH_BIG   },
+  { tabla: 'sal_documents',               tipo: 'lote',   campo_empresa: 'com_company_id', lote: BATCH_BIG   },
 ];
 
 function log(dbKey, msg) {
@@ -30,11 +32,34 @@ function stateKey(dbKey, companyId) {
   return `${dbKey}_${companyId}`;
 }
 
+async function executeWithRetry(dbKey, sql, params) {
+  let attempts = 0;
+
+  while (attempts < MAX_RETRIES) {
+    try {
+      return await dbExecute(dbKey, sql, params, { batch: true });
+    } catch (err) {
+      attempts++;
+
+      if (err.message.includes('Connection lost') && attempts < MAX_RETRIES) {
+        log(dbKey, `Reintentando (${attempts}/${MAX_RETRIES})...`);
+        await new Promise(res => setTimeout(res, 2000));
+      } else {
+        throw err;
+      }
+    }
+  }
+}
+
 async function procesarTablaSimple(dbKey, tabla, campoEmpresa, companyId) {
   if (tabla === 'com_cash') {
-    await dbExecute(dbKey, `UPDATE com_cash SET balance = '{}' WHERE company_id = ?`, [companyId]);
+    await executeWithRetry(
+      dbKey,
+      `UPDATE com_cash SET balance = '{}' WHERE company_id = ?`,
+      [companyId]
+    );
   } else if (tabla === 'sal_series') {
-    await dbExecute(
+    await executeWithRetry(
       dbKey,
       `UPDATE sal_series
        SET number = 0
@@ -51,7 +76,7 @@ async function procesarTablaEnLotes(dbKey, tabla, campoEmpresa, companyId, batch
   let affectedRows = 1;
 
   while (affectedRows > 0) {
-    const result = await dbExecute(
+    const result = await executeWithRetry(
       dbKey,
       `UPDATE ${tabla}
        SET deleted_at = NOW()
@@ -60,6 +85,7 @@ async function procesarTablaEnLotes(dbKey, tabla, campoEmpresa, companyId, batch
        LIMIT ${batchSize}`,
       [companyId]
     );
+
     affectedRows = result.affectedRows ?? 0;
     total += affectedRows;
 
@@ -134,6 +160,7 @@ async function ejecutarLimpieza(dbKey, companyId) {
 
     borrarEstado(key);
     log(dbKey, `===== PROCESO TERMINADO OK para company_id=${companyId} =====`);
+
   } catch (err) {
     guardarEstado(key, {
       db_key: dbKey,

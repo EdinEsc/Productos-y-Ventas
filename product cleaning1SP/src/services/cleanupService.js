@@ -5,17 +5,17 @@ const BATCH_SMALL = 5000;
 const BATCH_BIG = 10000;
 
 const TODAS_LAS_TABLAS = [
-  { tabla: 'war_products',                tipo: 'lote', campo_empresa: 'company_id',     lote: BATCH_BIG },
-  { tabla: 'war_warehouses_products',     tipo: 'lote', campo_empresa: null,             lote: BATCH_BIG, especial: 'warehouse' },
-  { tabla: 'war_brands',                  tipo: 'lote', campo_empresa: 'company_id',     lote: BATCH_SMALL, especial: 'brand' },
-  { tabla: 'war_document_kardex',         tipo: 'lote', campo_empresa: 'company_id',     lote: BATCH_BIG },
-  { tabla: 'war_inventory',               tipo: 'lote', campo_empresa: 'company_id',     lote: BATCH_BIG },
-  { tabla: 'war_kardex',                  tipo: 'lote', campo_empresa: 'company_id',     lote: BATCH_BIG },
-  { tabla: 'war_ms_categories',           tipo: 'lote', campo_empresa: 'company_id',     lote: BATCH_SMALL },
-  { tabla: 'war_ms_features',             tipo: 'lote', campo_empresa: 'company_id',     lote: BATCH_SMALL },
-  { tabla: 'war_ms_units',                tipo: 'lote', campo_empresa: 'company_id',     lote: BATCH_SMALL, especial: 'unit' },
-  { tabla: 'war_products_taxes',          tipo: 'lote', campo_empresa: 'company_id',     lote: BATCH_BIG },
-  { tabla: 'war_transfers',               tipo: 'lote', campo_empresa: 'company_id',     lote: BATCH_BIG },
+  { tabla: 'war_products',                campo_empresa: 'company_id', lote: BATCH_BIG },
+  { tabla: 'war_warehouses_products',     campo_empresa: null,         lote: BATCH_BIG, especial: 'warehouse' },
+  { tabla: 'war_brands',                  campo_empresa: 'company_id', lote: BATCH_SMALL, especial: 'brand' },
+  { tabla: 'war_document_kardex',         campo_empresa: 'company_id', lote: BATCH_BIG },
+  { tabla: 'war_inventory',               campo_empresa: 'company_id', lote: BATCH_BIG },
+  { tabla: 'war_kardex',                  campo_empresa: 'company_id', lote: BATCH_BIG },
+  { tabla: 'war_ms_categories',           campo_empresa: 'company_id', lote: BATCH_SMALL },
+  { tabla: 'war_ms_features',             campo_empresa: 'company_id', lote: BATCH_SMALL },
+  { tabla: 'war_ms_units',                campo_empresa: 'company_id', lote: BATCH_SMALL, especial: 'unit' },
+  { tabla: 'war_products_taxes',          campo_empresa: 'company_id', lote: BATCH_BIG },
+  { tabla: 'war_transfers',               campo_empresa: 'company_id', lote: BATCH_BIG },
 ];
 
 function log(dbKey, msg) {
@@ -27,158 +27,98 @@ function stateKey(dbKey, companyId, warehouseIds = []) {
   return `${dbKey}_${companyId}${suffix}`;
 }
 
+async function executeWithRetry(dbKey, sql, params = [], maxRetries = 3) {
+  let attempts = 0;
+
+  while (true) {
+    try {
+      return await dbExecute(dbKey, sql, params, { batch: true });
+    } catch (err) {
+      if (err.message.includes('Connection lost') && attempts < maxRetries) {
+        attempts++;
+        log(dbKey, `Reintentando conexión (${attempts}/${maxRetries})...`);
+        await new Promise(res => setTimeout(res, 2000));
+      } else {
+        throw err;
+      }
+    }
+  }
+}
+
 async function procesarTablaEnLotes(dbKey, tabla, campoEmpresa, companyId, batchSize, especial = null, warehouseIds = []) {
   let total = 0;
   let affectedRows = 1;
 
-  // Caso especial: war_warehouses_products (usa warehouse_ids pasados por parámetro)
   if (especial === 'warehouse') {
     if (warehouseIds.length === 0) {
-      log(dbKey, `  ${tabla} — No se pasaron warehouse_ids, omitiendo tabla`);
+      log(dbKey, `${tabla} — sin warehouse_ids, omitido`);
       return 0;
     }
-    
-    log(dbKey, `  ${tabla} — Warehouse IDs: ${warehouseIds.join(', ')}`);
+
     const placeholders = warehouseIds.map(() => '?').join(',');
-    
-    let reconnectAttempts = 0;
-    const MAX_RECONNECT_ATTEMPTS = 3;
-    
+
     while (affectedRows > 0) {
-      try {
-        const result = await dbExecute(
-          dbKey,
-          `UPDATE ${tabla}
-           SET deleted_at = NOW()
-           WHERE warehouse_id IN (${placeholders})
-             AND deleted_at IS NULL
-           LIMIT ${batchSize}`,
-          warehouseIds
-        );
-        affectedRows = result.affectedRows ?? 0;
-        total += affectedRows;
-        reconnectAttempts = 0;
-        if (affectedRows > 0) {
-          log(dbKey, `  ${tabla} — lote: ${affectedRows} filas (total: ${total})`);
-        }
-      } catch (err) {
-        if (err.message.includes('Connection lost') && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-          reconnectAttempts++;
-          log(dbKey, `  ${tabla} — Conexión perdida, reintentando (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`);
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          continue;
-        } else {
-          throw err;
-        }
+      const result = await executeWithRetry(
+        dbKey,
+        `UPDATE ${tabla}
+         SET deleted_at = NOW()
+         WHERE warehouse_id IN (${placeholders})
+           AND deleted_at IS NULL
+         LIMIT ${batchSize}`,
+        warehouseIds
+      );
+
+      affectedRows = result.affectedRows ?? 0;
+      total += affectedRows;
+
+      if (affectedRows > 0) {
+        log(dbKey, `${tabla} — lote: ${affectedRows} (total: ${total})`);
       }
     }
+
     return total;
   }
 
-  // Caso especial: war_brands (excluir flag_default = 1)
-  if (especial === 'brand') {
-    let reconnectAttempts = 0;
-    const MAX_RECONNECT_ATTEMPTS = 3;
-    
+  if (especial === 'brand' || especial === 'unit') {
     while (affectedRows > 0) {
-      try {
-        const result = await dbExecute(
-          dbKey,
-          `UPDATE ${tabla}
-           SET deleted_at = NOW()
-           WHERE ${campoEmpresa} = ?
-             AND flag_default != 1
-             AND deleted_at IS NULL
-           LIMIT ${batchSize}`,
-          [companyId]
-        );
-        affectedRows = result.affectedRows ?? 0;
-        total += affectedRows;
-        reconnectAttempts = 0;
-        if (affectedRows > 0) {
-          log(dbKey, `  ${tabla} — lote: ${affectedRows} filas (total: ${total})`);
-        }
-      } catch (err) {
-        if (err.message.includes('Connection lost') && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-          reconnectAttempts++;
-          log(dbKey, `  ${tabla} — Conexión perdida, reintentando (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`);
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          continue;
-        } else {
-          throw err;
-        }
-      }
-    }
-    return total;
-  }
-
-  // Caso especial: war_ms_units (excluir flag_default = 1)
-  if (especial === 'unit') {
-    let reconnectAttempts = 0;
-    const MAX_RECONNECT_ATTEMPTS = 3;
-    
-    while (affectedRows > 0) {
-      try {
-        const result = await dbExecute(
-          dbKey,
-          `UPDATE ${tabla}
-           SET deleted_at = NOW()
-           WHERE ${campoEmpresa} = ?
-             AND flag_default != 1
-             AND deleted_at IS NULL
-           LIMIT ${batchSize}`,
-          [companyId]
-        );
-        affectedRows = result.affectedRows ?? 0;
-        total += affectedRows;
-        reconnectAttempts = 0;
-        if (affectedRows > 0) {
-          log(dbKey, `  ${tabla} — lote: ${affectedRows} filas (total: ${total})`);
-        }
-      } catch (err) {
-        if (err.message.includes('Connection lost') && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-          reconnectAttempts++;
-          log(dbKey, `  ${tabla} — Conexión perdida, reintentando (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`);
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          continue;
-        } else {
-          throw err;
-        }
-      }
-    }
-    return total;
-  }
-
-  // Comportamiento normal
-  let reconnectAttempts = 0;
-  const MAX_RECONNECT_ATTEMPTS = 3;
-  
-  while (affectedRows > 0) {
-    try {
-      const result = await dbExecute(
+      const result = await executeWithRetry(
         dbKey,
         `UPDATE ${tabla}
          SET deleted_at = NOW()
          WHERE ${campoEmpresa} = ?
+           AND flag_default != 1
            AND deleted_at IS NULL
          LIMIT ${batchSize}`,
         [companyId]
       );
+
       affectedRows = result.affectedRows ?? 0;
       total += affectedRows;
-      reconnectAttempts = 0;
+
       if (affectedRows > 0) {
-        log(dbKey, `  ${tabla} — lote: ${affectedRows} filas (total: ${total})`);
+        log(dbKey, `${tabla} — lote: ${affectedRows} (total: ${total})`);
       }
-    } catch (err) {
-      if (err.message.includes('Connection lost') && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-        reconnectAttempts++;
-        log(dbKey, `  ${tabla} — Conexión perdida, reintentando (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`);
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        continue;
-      } else {
-        throw err;
-      }
+    }
+
+    return total;
+  }
+
+  while (affectedRows > 0) {
+    const result = await executeWithRetry(
+      dbKey,
+      `UPDATE ${tabla}
+       SET deleted_at = NOW()
+       WHERE ${campoEmpresa} = ?
+         AND deleted_at IS NULL
+       LIMIT ${batchSize}`,
+      [companyId]
+    );
+
+    affectedRows = result.affectedRows ?? 0;
+    total += affectedRows;
+
+    if (affectedRows > 0) {
+      log(dbKey, `${tabla} — lote: ${affectedRows} (total: ${total})`);
     }
   }
 
@@ -192,9 +132,9 @@ async function ejecutarLimpieza(dbKey, companyId, warehouseIds = []) {
 
   if (estadoAnterior && estadoAnterior.estado === 'error') {
     tablasDoneSet = new Set(estadoAnterior.tablas_completadas || []);
-    log(dbKey, `Reanudando. Tablas ya completadas: ${[...tablasDoneSet].join(', ') || 'ninguna'}`);
+    log(dbKey, `Reanudando. Tablas completadas: ${[...tablasDoneSet].join(', ')}`);
   } else {
-    log(dbKey, `Iniciando proceso nuevo para company_id=${companyId}${warehouseIds.length ? `, warehouses: ${warehouseIds.join(',')}` : ''}`);
+    log(dbKey, `Inicio limpieza company_id=${companyId}`);
   }
 
   guardarEstado(key, {
@@ -209,9 +149,9 @@ async function ejecutarLimpieza(dbKey, companyId, warehouseIds = []) {
   });
 
   try {
-    for (const { tabla, tipo, campo_empresa, lote, especial } of TODAS_LAS_TABLAS) {
+    for (const { tabla, campo_empresa, lote, especial } of TODAS_LAS_TABLAS) {
       if (tablasDoneSet.has(tabla)) {
-        log(dbKey, `Saltando ${tabla} (ya completada)`);
+        log(dbKey, `Saltando ${tabla}`);
         continue;
       }
 
@@ -231,22 +171,13 @@ async function ejecutarLimpieza(dbKey, companyId, warehouseIds = []) {
       await procesarTablaEnLotes(dbKey, tabla, campo_empresa, companyId, lote, especial, warehouseIds);
 
       tablasDoneSet.add(tabla);
-      log(dbKey, `FIN ${tabla}`);
 
-      guardarEstado(key, {
-        db_key: dbKey,
-        company_id: companyId,
-        warehouse_ids: warehouseIds,
-        estado: 'ejecutando',
-        tabla_actual: tabla,
-        tablas_completadas: [...tablasDoneSet],
-        fecha_inicio: new Date().toISOString(),
-        error: null,
-      });
+      log(dbKey, `FIN ${tabla}`);
     }
 
     borrarEstado(key);
-    log(dbKey, `===== PROCESO TERMINADO OK para company_id=${companyId} =====`);
+    log(dbKey, `===== LIMPIEZA TERMINADA OK =====`);
+
   } catch (err) {
     guardarEstado(key, {
       db_key: dbKey,
