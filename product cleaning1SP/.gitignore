@@ -1,5 +1,0 @@
-.env
-.env.*
-/node_modules
-*.pem
-docker-compose.override.yml
