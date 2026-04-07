@@ -80,6 +80,7 @@ export function LoginCard({ onLogin }) {
 
       onLogin({
         ...authData,
+        loginEmail: user,
         employee: employeeData,
         warehouses: warehousesData,
       })

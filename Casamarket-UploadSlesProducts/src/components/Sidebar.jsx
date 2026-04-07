@@ -77,7 +77,7 @@ export function Sidebar({
               )}
 
               {isCollapsed && (
-                <div className="hidden lg:flex items-center justify-center w-10 h-10 rounded-lg bg-orange-100 dark:bg-orange-900/30 text-orange-600 font-bold">
+                <div className="hidden lg:flex items-center justify-center w-10 h-10 rounded-lg bg-[#e0f5f5] dark:bg-[#014f52] text-[#02979B] dark:text-[#D7EB87] font-bold">
                   C
                 </div>
               )}
@@ -85,14 +85,14 @@ export function Sidebar({
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setIsOpen(false)}
-                  className="lg:hidden inline-flex items-center justify-center rounded-lg p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                  className="lg:hidden inline-flex items-center justify-center rounded-lg p-2 text-gray-600 dark:text-gray-300 hover:bg-[#e0f5f5] dark:hover:bg-gray-700"
                 >
                   <X className="h-5 w-5" />
                 </button>
 
                 <button
                   onClick={() => setIsCollapsed((prev) => !prev)}
-                  className="hidden lg:inline-flex items-center justify-center rounded-lg p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                  className="hidden lg:inline-flex items-center justify-center rounded-lg p-2 text-gray-600 dark:text-gray-300 hover:bg-[#e0f5f5] dark:hover:bg-gray-700"
                 >
                   {isCollapsed ? (
                     <ChevronsRight className="h-5 w-5" />
@@ -113,7 +113,7 @@ export function Sidebar({
                 <div key={item.title} className="mb-2">
                   <button
                     onClick={() => toggle(item.title)}
-                    className={`w-full flex items-center rounded-xl text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition ${
+                    className={`w-full flex items-center rounded-xl text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-[#e0f5f5] dark:hover:bg-gray-700 transition ${
                       isCollapsed ? 'justify-center px-2 py-3' : 'gap-3 px-3 py-3'
                     }`}
                     title={isCollapsed ? item.title : ''}
@@ -139,7 +139,7 @@ export function Sidebar({
                           key={sub.title}
                           href={sub.url}
                           onClick={() => setIsOpen(false)}
-                          className="px-3 py-2 rounded-lg text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition"
+                          className="px-3 py-2 rounded-lg text-sm text-[#4a6000] bg-[#D7EB87] hover:brightness-95 dark:bg-[#5f6f1f] dark:text-[#eef7c6] transition"
                         >
                           {sub.title}
                         </a>
