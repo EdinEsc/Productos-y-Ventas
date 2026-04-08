@@ -1,66 +1,68 @@
 import { useState } from 'react'
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Sidebar } from './components/Sidebar'
-import { ThemeToggle } from './components/ThemeToggle'
+import { Header } from './components/Header'
 import { DeleteProducts } from './pages/DeleteProducts'
 import { DeleteSales } from './pages/DeleteSales'
-import { Menu } from 'lucide-react'
-import { useUserFromFrame } from './hooks/useUserFromFrame'
+import { LoginCard } from './components/LoginCard'
 
 function App() {
-  const { user, loading, error } = useUserFromFrame()
-
+  const [user, setUser] = useState(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        Cargando aplicación...
-      </div>
-    )
-  }
-
-  if (error || !user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        {error || 'No se pudo cargar el usuario'}
-      </div>
-    )
-  }
-
   return (
     <HashRouter>
-      <div className="min-h-screen bg-zinc-950 text-white">
-        <ThemeToggle />
-
-        <button
-          onClick={() => setSidebarOpen(true)}
-          className="fixed left-4 top-4 z-50 rounded-lg border border-white/10 bg-zinc-900 p-2 lg:hidden"
-        >
-          <Menu size={20} />
-        </button>
-
-        <Sidebar
-          open={sidebarOpen}
-          onClose={() => setSidebarOpen(false)}
-          collapsed={sidebarCollapsed}
-          setCollapsed={setSidebarCollapsed}
-          user={user}
+      <Routes>
+        <Route
+          path="/login"
+          element={
+            user
+              ? <Navigate to="/products/deletedProducts" replace />
+              : <LoginCard onLogin={setUser} />
+          }
         />
 
-        <main className={`${sidebarCollapsed ? 'lg:ml-20' : 'lg:ml-72'} transition-all`}>
-          <Routes>
-            <Route path="/" element={<Navigate to="/products/deletedProducts" replace />} />
-            <Route path="/products/deletedProducts" element={<DeleteProducts user={user} />} />
-            <Route path="/sales/deletedSales" element={<DeleteSales user={user} />} />
-            <Route path="*" element={<Navigate to="/products/deletedProducts" replace />} />
-          </Routes>
-        </main>
-      </div>
+        <Route
+          path="/*"
+          element={
+            !user
+              ? <Navigate to="/login" replace />
+              : (
+                <div className="min-h-screen bg-gray-100 dark:bg-gray-900 transition-colors">
+                  <Sidebar
+                    onLogout={() => setUser(null)}
+                    isOpen={sidebarOpen}
+                    setIsOpen={setSidebarOpen}
+                    isCollapsed={sidebarCollapsed}
+                    setIsCollapsed={setSidebarCollapsed}
+                  />
+                  <Header
+                    user={user}
+                    onMenuClick={() => setSidebarOpen(true)}
+                    sidebarCollapsed={sidebarCollapsed}
+                  />
+                  <main
+                    className={`${
+                      sidebarCollapsed ? 'lg:ml-20' : 'lg:ml-64'
+                    } pt-[72px] p-6 transition-all`}
+                  >
+                    <Routes>
+                      <Route path="/" element={<Navigate to="/products/deletedProducts" replace />} />
+                      <Route path="/products/deletedProducts" element={<DeleteProducts user={user} />} />
+                      <Route path="/sales/deletedSales" element={<DeleteSales user={user} />} />
+                      <Route path="*" element={<Navigate to="/products/deletedProducts" replace />} />
+                    </Routes>
+                  </main>
+                </div>
+              )
+          }
+        />
+
+        <Route path="/" element={<Navigate to="/login" replace />} />
+      </Routes>
     </HashRouter>
   )
 }
 
 export default App
-
